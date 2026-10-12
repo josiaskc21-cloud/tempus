@@ -124,6 +124,7 @@ public class SearchFragment extends Fragment implements ClickCallback {
 
         // Songs
         bind.searchResultTracksRecyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
+        com.eddyizm.tempus.util.SwipeToQueueHelper.attach(bind.searchResultTracksRecyclerView, () -> songHorizontalAdapter, () -> mediaBrowserListenableFuture);
         bind.searchResultTracksRecyclerView.setHasFixedSize(true);
 
         songHorizontalAdapter = new SongHorizontalAdapter(getViewLifecycleOwner(), this, true, false, null);

@@ -478,6 +478,7 @@ public class PlaylistPageFragment extends Fragment implements ClickCallback {
 
     private void initSongsView() {
         bind.songRecyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
+        com.eddyizm.tempus.util.SwipeToQueueHelper.attach(bind.songRecyclerView, () -> songHorizontalAdapter, () -> mediaBrowserListenableFuture);
         bind.songRecyclerView.setHasFixedSize(true);
 
         /* Edge-to-edge dynamic inset for bottom padding */

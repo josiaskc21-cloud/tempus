@@ -1,5 +1,11 @@
 package com.eddyizm.tempus.ui.adapter;
 
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.util.Log;
@@ -8,7 +14,9 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.content.res.AppCompatResources;
+import androidx.core.graphics.ColorUtils;
 import androidx.media3.session.MediaBrowser;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -27,6 +35,7 @@ import com.eddyizm.tempus.util.ExternalAudioReader;
 import com.eddyizm.tempus.util.MusicUtil;
 import com.eddyizm.tempus.util.Preferences;
 import com.eddyizm.tempus.util.FavoriteRegistry;
+import com.google.android.material.color.MaterialColors;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
 
@@ -84,20 +93,18 @@ public class PlayerSongQueueAdapter extends RecyclerView.Adapter<PlayerSongQueue
                 .build()
                 .thumbnail(thumbnail)
                 .into(holder.item.queueSongCoverImageView);
-        MediaManager.getCurrentIndex(mediaBrowserListenableFuture, new MediaIndexCallback() {
-            @Override
-            public void onRecovery(int index) {
-                if (holder.getLayoutPosition() < index) {
-                    holder.item.queueSongTitleTextView.setAlpha(0.2f);
-                    holder.item.queueSongSubtitleTextView.setAlpha(0.2f);
-                    holder.item.ratingIndicatorImageView.setAlpha(0.2f);
-                } else {
-                    holder.item.queueSongTitleTextView.setAlpha(1.0f);
-                    holder.item.queueSongSubtitleTextView.setAlpha(1.0f);
-                    holder.item.ratingIndicatorImageView.setAlpha(1.0f);
-                }
-            }
-        });
+        // Played songs are dimmed; songs the user queued ("Next in queue") get a tinted row.
+        int pos = holder.getLayoutPosition();
+        float alpha = (currentIndex >= 0 && pos < currentIndex) ? 0.2f : 1.0f;
+        holder.item.queueSongTitleTextView.setAlpha(alpha);
+        holder.item.queueSongSubtitleTextView.setAlpha(alpha);
+        holder.item.ratingIndicatorImageView.setAlpha(alpha);
+        if (isInUpNext(pos)) {
+            int tint = MaterialColors.getColor(holder.itemView, com.google.android.material.R.attr.colorSecondaryContainer);
+            holder.itemView.setBackgroundColor(ColorUtils.setAlphaComponent(tint, 150));
+        } else {
+            holder.itemView.setBackgroundColor(Color.TRANSPARENT);
+        }
 
         boolean isDownloaded = false;
 
@@ -167,7 +174,11 @@ public class PlayerSongQueueAdapter extends RecyclerView.Adapter<PlayerSongQueue
     }
 
     private void bindPlaybackState(@NonNull PlayerSongQueueAdapter.ViewHolder holder, @NonNull Child song) {
-        boolean isCurrent = currentPlayingId != null && currentPlayingId.equals(song.getId());
+        // Prefer the player's index: the same song can be in the queue twice (queued from the
+        // playlist that is playing), and only one of those rows is actually playing.
+        boolean isCurrent = currentIndex >= 0
+                ? holder.getLayoutPosition() == currentIndex
+                : currentPlayingId != null && currentPlayingId.equals(song.getId());
 
         if (isCurrent) {
             holder.item.playPauseIcon.setVisibility(View.VISIBLE);
@@ -183,6 +194,70 @@ public class PlayerSongQueueAdapter extends RecyclerView.Adapter<PlayerSongQueue
         }
     }
     
+    private int currentIndex = -1;
+    private int upNextEnd = -1;
+
+    /** Player position of the current song and end of the user-queued block (or -1). */
+    public void setQueuePositions(int currentIndex, int upNextEnd) {
+        if (this.currentIndex == currentIndex && this.upNextEnd == upNextEnd) return;
+        this.currentIndex = currentIndex;
+        this.upNextEnd = upNextEnd;
+        notifyDataSetChanged();
+    }
+
+    private boolean hasUpNextBlock() {
+        return currentIndex >= 0 && upNextEnd > currentIndex + 1 && upNextEnd <= getItemCount();
+    }
+
+    private boolean isInUpNext(int position) {
+        return hasUpNextBlock() && position > currentIndex && position < upNextEnd;
+    }
+
+    /** Section title shown above this row, or null. */
+    @Nullable
+    public String sectionLabelAt(Context context, int position) {
+        if (currentIndex < 0 || position == RecyclerView.NO_POSITION || position >= getItemCount()) return null;
+        boolean block = hasUpNextBlock();
+        if (block && position == currentIndex + 1) return context.getString(R.string.queue_section_next_in_queue);
+        if (position == (block ? upNextEnd : currentIndex + 1)) return context.getString(R.string.queue_section_next_up);
+        return null;
+    }
+
+    /** Draws the "Next in queue" / "Next up" headers without changing adapter positions. */
+    public static class SectionDecoration extends RecyclerView.ItemDecoration {
+        private final PlayerSongQueueAdapter adapter;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int headerHeight;
+        private final int startPadding;
+
+        public SectionDecoration(@NonNull Context context, @NonNull PlayerSongQueueAdapter adapter) {
+            this.adapter = adapter;
+            float density = context.getResources().getDisplayMetrics().density;
+            headerHeight = Math.round(36 * density);
+            startPadding = Math.round(16 * density);
+            paint.setTextSize(14 * context.getResources().getDisplayMetrics().scaledDensity);
+            paint.setTypeface(Typeface.DEFAULT_BOLD);
+        }
+
+        @Override
+        public void getItemOffsets(@NonNull Rect outRect, @NonNull View view, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
+            int pos = parent.getChildAdapterPosition(view);
+            outRect.top = adapter.sectionLabelAt(parent.getContext(), pos) != null ? headerHeight : 0;
+        }
+
+        @Override
+        public void onDraw(@NonNull Canvas c, @NonNull RecyclerView parent, @NonNull RecyclerView.State state) {
+            paint.setColor(MaterialColors.getColor(parent, com.google.android.material.R.attr.colorPrimary));
+            for (int i = 0; i < parent.getChildCount(); i++) {
+                View child = parent.getChildAt(i);
+                String label = adapter.sectionLabelAt(parent.getContext(), parent.getChildAdapterPosition(child));
+                if (label == null) continue;
+                float baseline = child.getTop() + child.getTranslationY() - headerHeight / 2f - (paint.descent() + paint.ascent()) / 2f;
+                c.drawText(label, parent.getPaddingLeft() + startPadding, baseline, paint);
+            }
+        }
+    }
+
     public List<Child> getItems() {
         return this.songs;
     }

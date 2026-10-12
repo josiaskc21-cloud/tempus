@@ -207,6 +207,7 @@ public class SongListPageFragment extends Fragment implements ClickCallback {
     @SuppressLint("ClickableViewAccessibility")
     private void initSongListView() {
         bind.songListRecyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
+        com.eddyizm.tempus.util.SwipeToQueueHelper.attach(bind.songListRecyclerView, () -> songHorizontalAdapter, () -> mediaBrowserListenableFuture);
         bind.songListRecyclerView.setHasFixedSize(true);
 
         songHorizontalAdapter = new SongHorizontalAdapter(getViewLifecycleOwner(), this, true, false, null);

@@ -298,10 +298,10 @@ public class QueueRepository {
             }
 
             final List<Queue> finalMedia = media;
-            List<Child> toAddCopy = new ArrayList<>(toAdd);
-            List<Child> filteredToAdd = toAddCopy.stream()
-                    .filter(child -> !isMediaInQueue(finalMedia, child))
-                    .collect(Collectors.toList());
+            // Keep duplicates: the player's timeline holds them too (e.g. queueing a song from
+            // the playlist that is already playing), and the stored queue must mirror it 1:1
+            // or the queue screen shows the wrong songs as played/current.
+            List<Child> filteredToAdd = new ArrayList<>(toAdd);
 
             for (int i = 0; i < filteredToAdd.size(); i++) {
                 int idx = insertionIndex + i;

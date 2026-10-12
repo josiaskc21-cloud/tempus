@@ -121,6 +121,7 @@ public class PlayerQueueFragment extends Fragment implements ClickCallback {
         super.onResume();
         setMediaBrowserListenableFuture();
         updateNowPlayingItem();
+        refreshQueuePositions();
         mediaBrowserListenableFuture.addListener(() -> {
             try {
                 long position = com.eddyizm.tempus.lan.LanRemoteSession.isActive()
@@ -182,13 +183,16 @@ public class PlayerQueueFragment extends Fragment implements ClickCallback {
 
         playerSongQueueAdapter = new PlayerSongQueueAdapter(this);
         bind.playerQueueRecyclerView.setAdapter(playerSongQueueAdapter);
+        bind.playerQueueRecyclerView.addItemDecoration(new PlayerSongQueueAdapter.SectionDecoration(requireContext(), playerSongQueueAdapter));
         reapplyPlayback();
+        MediaManager.getUpNextEnd().observe(getViewLifecycleOwner(), end -> refreshQueuePositions());
 
         playerBottomSheetViewModel.getQueueSong().observe(getViewLifecycleOwner(), queue -> {
             if (queue != null) {
                 localQueue = queue.stream().map(item -> (Child) item).collect(Collectors.toList());
                 if (!com.eddyizm.tempus.lan.LanRemoteSession.isActive()) playerSongQueueAdapter.setItems(new ArrayList<>(localQueue));
                 reapplyPlayback();
+                refreshQueuePositions();
             }
         });
         com.eddyizm.tempus.lan.LanRemoteSession.queueState().observe(getViewLifecycleOwner(), queue -> {
@@ -242,6 +246,28 @@ public class PlayerQueueFragment extends Fragment implements ClickCallback {
         }).attachToRecyclerView(bind.playerQueueRecyclerView);
     }
 
+    // Pulls the player's current index and the user-queued block into the adapter, so the
+    // queue screen dims only played songs and shows "Next in queue" / "Next up" correctly.
+    private void refreshQueuePositions() {
+        if (playerSongQueueAdapter == null) return;
+        if (com.eddyizm.tempus.lan.LanRemoteSession.isActive() || mediaBrowserListenableFuture == null) {
+            playerSongQueueAdapter.setQueuePositions(-1, -1);
+            return;
+        }
+        MediaManager.getCurrentIndex(mediaBrowserListenableFuture, new com.eddyizm.tempus.interfaces.MediaIndexCallback() {
+            @Override
+            public void onRecovery(int index) {
+                if (bind == null) return;
+                bind.playerQueueRecyclerView.post(() -> {
+                    if (bind == null || playerSongQueueAdapter == null) return;
+                    Integer end = MediaManager.getUpNextEnd().getValue();
+                    playerSongQueueAdapter.setQueuePositions(index, end != null ? end : -1);
+                    bind.playerQueueRecyclerView.invalidateItemDecorations();
+                });
+            }
+        });
+    }
+
     private void updateNowPlayingItem() {
         playerSongQueueAdapter.notifyDataSetChanged();
     }
@@ -254,6 +280,7 @@ public class PlayerQueueFragment extends Fragment implements ClickCallback {
     private void observePlayback() {
         playbackViewModel.getCurrentSongId().observe(getViewLifecycleOwner(), id -> {
             if (com.eddyizm.tempus.lan.LanRemoteSession.isActive()) { reapplyPlayback(); return; }
+            refreshQueuePositions();
             if (playerSongQueueAdapter != null) {
                 Boolean playing = playbackViewModel.getIsPlaying().getValue();
                 playerSongQueueAdapter.setPlaybackState(id, playing != null && playing);

@@ -9,6 +9,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.OptIn;
 import androidx.lifecycle.LiveData;
+import androidx.lifecycle.MutableLiveData;
 import androidx.lifecycle.Observer;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
@@ -408,9 +409,38 @@ public class MediaManager {
     // timeline index just past the last user-queued song; it goes stale on its own once
     // playback moves past it, and is reset whenever a new queue is started.
     private static int upNextEnd = -1;
+    private static final MutableLiveData<Integer> upNextEndLive = new MutableLiveData<>(-1);
+
+    private static void setUpNextEnd(int value) {
+        upNextEnd = value;
+        upNextEndLive.postValue(value);
+    }
 
     public static void resetUpNext() {
-        upNextEnd = -1;
+        setUpNextEnd(-1);
+    }
+
+    // Timeline index just past the last song the user queued, or -1. The queue screen uses it
+    // to show "Next in queue" separately from the rest of the playlist/album.
+    public static LiveData<Integer> getUpNextEnd() {
+        return upNextEndLive;
+    }
+
+    // Keep the Up-next block in step with edits made in the queue screen.
+    private static void adjustUpNextForRemove(int from, int to) {
+        if (upNextEnd < 0 || from >= upNextEnd) return;
+        int removedInside = Math.min(to, upNextEnd) - from;
+        setUpNextEnd(upNextEnd - removedInside);
+    }
+
+    private static void adjustUpNextForMove(int from, int to, int current) {
+        if (upNextEnd < 0) return;
+        boolean fromInBlock = from > current && from < upNextEnd;
+        if (fromInBlock && to >= upNextEnd) {
+            setUpNextEnd(upNextEnd - 1);          // dragged out of "Next in queue"
+        } else if (!fromInBlock && from >= upNextEnd && to > current && to < upNextEnd) {
+            setUpNextEnd(upNextEnd + 1);          // dragged into "Next in queue"
+        }
     }
 
     private static int upNextInsertPos(Player player) {
@@ -430,12 +460,12 @@ public class MediaManager {
         // already-queued ones (it derives the offset from insertPos - current - 1).
         queueTarget.requestPlayNextFixup(insertPos, items.size(), targetCount);
         player.addMediaItems(insertPos, items);
-        upNextEnd = insertPos + items.size();
+        setUpNextEnd(insertPos + items.size());
     }
 
     // "Play next" jumps ahead of everything; keep the Up-next block pointing at the right songs.
     private static void shiftUpNextForPlayNext(Player player, int count) {
-        if (upNextEnd > player.getCurrentMediaItemIndex() + 1) upNextEnd += count;
+        if (upNextEnd > player.getCurrentMediaItemIndex() + 1) setUpNextEnd(upNextEnd + count);
     }
 
     public static void enqueue(ListenableFuture<MediaBrowser> mediaBrowserListenableFuture, List<Child> media, boolean playImmediatelyAfter) {
@@ -558,6 +588,7 @@ public class MediaManager {
                 try {
                     if (mediaBrowserListenableFuture.isDone()) {
                         Log.e(TAG, "swap");
+                        adjustUpNextForMove(from, to, mediaBrowserListenableFuture.get().getCurrentMediaItemIndex());
                         mediaBrowserListenableFuture.get().moveMediaItem(from, to);
                         swapDatabase(media);
                     }
@@ -576,6 +607,7 @@ public class MediaManager {
                     if (mediaBrowserListenableFuture.isDone()) {
                         Log.e(TAG, "remove");
                         if (mediaBrowserListenableFuture.get().getMediaItemCount() > 1 && mediaBrowserListenableFuture.get().getCurrentMediaItemIndex() != toRemove) {
+                            adjustUpNextForRemove(toRemove, toRemove + 1);
                             mediaBrowserListenableFuture.get().removeMediaItem(toRemove);
                             removeDatabase(media, toRemove);
                         } else {
@@ -596,6 +628,7 @@ public class MediaManager {
                 try {
                     if (mediaBrowserListenableFuture.isDone()) {
                         Log.e(TAG, "remove range");
+                        adjustUpNextForRemove(fromItem, toItem);
                         mediaBrowserListenableFuture.get().removeMediaItems(fromItem, toItem);
                         removeRangeDatabase(media, fromItem, toItem);
                     }
@@ -613,6 +646,7 @@ public class MediaManager {
             return;
         }
 
+        adjustUpNextForRemove(fromItem, toItem);
         player.removeMediaItems(fromItem, toItem);
         getQueueRepository().deleteRange(fromItem, toItem);
     }

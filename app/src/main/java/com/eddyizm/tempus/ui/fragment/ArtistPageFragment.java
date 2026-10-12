@@ -320,6 +320,7 @@ public class ArtistPageFragment extends Fragment implements ClickCallback {
 
     private void initTopSongsView() {
         bind.mostStreamedSongRecyclerView.setLayoutManager(new LinearLayoutManager(requireContext()));
+        com.eddyizm.tempus.util.SwipeToQueueHelper.attach(bind.mostStreamedSongRecyclerView, () -> songHorizontalAdapter, () -> mediaBrowserListenableFuture);
 
         songHorizontalAdapter = new SongHorizontalAdapter(getViewLifecycleOwner(), this, true, true, null);
         bind.mostStreamedSongRecyclerView.setAdapter(songHorizontalAdapter);

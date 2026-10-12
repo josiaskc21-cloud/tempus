@@ -647,6 +647,9 @@
     <string name="share_update_dialog_title">Share</string>
     <string name="song_bottom_sheet_add_to_playlist">Add to playlist</string>
     <string name="song_bottom_sheet_add_to_queue">Add to queue</string>
+    <string name="swipe_added_to_queue">Added to queue</string>
+    <string name="queue_section_next_in_queue">Next in queue</string>
+    <string name="queue_section_next_up">Next up</string>
     <string name="song_bottom_sheet_download">Download</string>
     <string name="song_bottom_sheet_error_retrieving_album">Error retrieving album</string>
     <string name="song_bottom_sheet_error_retrieving_artist">Error retrieving artist</string>
