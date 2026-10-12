@@ -238,10 +238,13 @@ open class BaseMediaService : MediaLibraryService(), MediaManager.QueueTarget {
                 continue
             }
 
+            // Songs already queued "Up next" sit right after current in the shuffle order;
+            // splice new ones behind them so they keep the order they were added in.
+            val skip = (req.insertPos - (current + 1)).coerceIn(0, base.size - curPos - 1)
             val newOrder = ArrayList<Int>(req.target)
             newOrder.addAll(base)
             for (j in 0 until req.count) {
-                newOrder.add(curPos + 1 + j, req.insertPos + j)
+                newOrder.add(curPos + 1 + skip + j, req.insertPos + j)
             }
             player.shuffleOrder = DefaultShuffleOrder(newOrder.toIntArray(), Random.nextLong())
             Log.d(TAG, "playNextFixup: ${req.count} item(s) moved to shuffle position ${curPos + 1}")

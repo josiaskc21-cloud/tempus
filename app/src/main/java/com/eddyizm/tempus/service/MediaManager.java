@@ -310,6 +310,7 @@ public class MediaManager {
                             });
 
                             if (!LanRemoteSession.isActive()) enqueueDatabase(media, true, 0);
+                            resetUpNext();
                         });
                     }
                 } catch (ExecutionException | InterruptedException e) {
@@ -332,6 +333,7 @@ public class MediaManager {
                         browser.prepare();
                         browser.play();
                         enqueueDatabase(media, true, 0);
+                        resetUpNext();
                     }
                 } catch (ExecutionException | InterruptedException e) {
                     e.printStackTrace();
@@ -401,6 +403,41 @@ public class MediaManager {
         }
     }
 
+    // Spotify-style "Add to queue": songs the user queues play right after the current song,
+    // in the order they were added, before the rest of the playlist/album. upNextEnd is the
+    // timeline index just past the last user-queued song; it goes stale on its own once
+    // playback moves past it, and is reset whenever a new queue is started.
+    private static int upNextEnd = -1;
+
+    public static void resetUpNext() {
+        upNextEnd = -1;
+    }
+
+    private static int upNextInsertPos(Player player) {
+        int base = player.getCurrentMediaItemIndex() + 1;
+        if (upNextEnd > base && upNextEnd <= player.getMediaItemCount()) return upNextEnd;
+        return base;
+    }
+
+    // Inserts after the songs already in "Up next" and records the new end of that block.
+    private static void insertUpNext(QueueTarget queueTarget, Player player, List<Child> media) {
+        List<MediaItem> items = MappingUtil.mapMediaItems(media);
+        if (items.isEmpty()) return;
+        int insertPos = upNextInsertPos(player);
+        int targetCount = player.getMediaItemCount() + items.size();
+        enqueueDatabase(media, false, insertPos);
+        // In shuffle mode the service splices the new songs into the shuffle order behind the
+        // already-queued ones (it derives the offset from insertPos - current - 1).
+        queueTarget.requestPlayNextFixup(insertPos, items.size(), targetCount);
+        player.addMediaItems(insertPos, items);
+        upNextEnd = insertPos + items.size();
+    }
+
+    // "Play next" jumps ahead of everything; keep the Up-next block pointing at the right songs.
+    private static void shiftUpNextForPlayNext(Player player, int count) {
+        if (upNextEnd > player.getCurrentMediaItemIndex() + 1) upNextEnd += count;
+    }
+
     public static void enqueue(ListenableFuture<MediaBrowser> mediaBrowserListenableFuture, List<Child> media, boolean playImmediatelyAfter) {
         if (LanRemoteSession.routeSongs(media, playImmediatelyAfter ? "next" : "append", 0)) return;
         if (mediaBrowserListenableFuture != null) {
@@ -426,12 +463,15 @@ public class MediaManager {
 
         Log.d(TAG, "enqueue");
         int current = player.getCurrentMediaItemIndex();
-        if (playImmediatelyAfter && current != C.INDEX_UNSET) {
+        if (current == C.INDEX_UNSET) {
+            enqueueDatabase(media, false, player.getMediaItemCount());
+            player.addMediaItems(MappingUtil.mapMediaItems(media));
+        } else if (playImmediatelyAfter) {
+            shiftUpNextForPlayNext(player, media.size());
             enqueueDatabase(media, false, current + 1);
             insertPlayNext(queueTarget, player, MappingUtil.mapMediaItems(media));
         } else {
-            enqueueDatabase(media, false, player.getMediaItemCount());
-            player.addMediaItems(MappingUtil.mapMediaItems(media));
+            insertUpNext(queueTarget, player, media);
         }
     }
 
@@ -445,12 +485,15 @@ public class MediaManager {
                         Log.e(TAG, "enqueue");
                         MediaBrowser browser = mediaBrowserListenableFuture.get();
                         int current = browser.getCurrentMediaItemIndex();
-                        if (playImmediatelyAfter && current != C.INDEX_UNSET) {
+                        if (current == C.INDEX_UNSET) {
+                            enqueueDatabase(media, false, browser.getMediaItemCount());
+                            browser.addMediaItem(MappingUtil.mapMediaItem(media));
+                        } else if (playImmediatelyAfter) {
+                            shiftUpNextForPlayNext(browser, 1);
                             enqueueDatabase(media, false, current + 1);
                             insertPlayNext(queueTargetFor(browser), browser, Collections.singletonList(MappingUtil.mapMediaItem(media)));
                         } else {
-                            enqueueDatabase(media, false, mediaBrowserListenableFuture.get().getMediaItemCount());
-                            mediaBrowserListenableFuture.get().addMediaItem(MappingUtil.mapMediaItem(media));
+                            insertUpNext(queueTargetFor(browser), browser, Collections.singletonList(media));
                         }
                     }
                 } catch (ExecutionException | InterruptedException e) {
