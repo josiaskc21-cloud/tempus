@@ -94,12 +94,12 @@ public class PlayerSongQueueAdapter extends RecyclerView.Adapter<PlayerSongQueue
                 .thumbnail(thumbnail)
                 .into(holder.item.queueSongCoverImageView);
         // Played songs are dimmed; songs the user queued ("Next in queue") get a tinted row.
-        int pos = holder.getLayoutPosition();
-        float alpha = (currentIndex >= 0 && pos < currentIndex) ? 0.2f : 1.0f;
+        int rowPos = holder.getLayoutPosition();
+        float alpha = (currentIndex >= 0 && rowPos < currentIndex) ? 0.2f : 1.0f;
         holder.item.queueSongTitleTextView.setAlpha(alpha);
         holder.item.queueSongSubtitleTextView.setAlpha(alpha);
         holder.item.ratingIndicatorImageView.setAlpha(alpha);
-        if (isInUpNext(pos)) {
+        if (isInUpNext(rowPos)) {
             int tint = MaterialColors.getColor(holder.itemView, com.google.android.material.R.attr.colorSecondaryContainer);
             holder.itemView.setBackgroundColor(ColorUtils.setAlphaComponent(tint, 150));
         } else {
